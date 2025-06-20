@@ -1,23 +1,34 @@
-import { Link, createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute, notFound } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import React from 'react'
 
 export const Route = createFileRoute('/chat/$studentId')({
   component: RouteComponent,
+  loader: ({ params }) => {
+    const { studentId } = params
+    if (!studentId) {
+      throw notFound()
+    }
+
+    return {
+      messages: [
+        { id: 1, text: 'Hello!', sender: 'student', createdAt: "2023-03-01T12:00:00Z" },
+        { id: 2, text: 'Hi there!', sender: 'me', createdAt: "2023-03-01T12:01:00Z" },
+        { id: 3, text: 'How are you?', sender: 'student', createdAt: "2023-03-01T12:02:00Z" },
+      ],
+    }
+  }
 })
 
 function RouteComponent() {
-  const { studentId } = Route.useParams()
   const buttonRef = React.useRef<HTMLButtonElement>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const chatContainerRef = React.useRef<HTMLDivElement>(null)
   const [currentMessage, setCurrentMessage] = React.useState<string>('')
 
-  const [messages, setMessages] = React.useState([
-    { id: 1, text: 'Hello!', sender: 'student', createdAt: "2023-03-01T12:00:00Z" },
-    { id: 2, text: 'Hi there!', sender: 'me', createdAt: "2023-03-01T12:01:00Z" },
-    { id: 3, text: 'How are you?', sender: 'student', createdAt: "2023-03-01T12:02:00Z" },
-  ])
+  const { messages: loadedMessages } = Route.useLoaderData()
+
+  const [messages, setMessages] = React.useState(loadedMessages)
 
   return (
     <div className='fixed inset-0 overflow-hidden flex flex-col size-full'>
