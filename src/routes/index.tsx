@@ -1,20 +1,51 @@
+import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
+
+// [{ "id": "848", "first_name": "Chris", "last_name": "Moyer" }] %
+type Chat = {
+  id: string
+  first_name: string
+  last_name: string
+}
+
+const fetchChats = async () => {
+  const token = localStorage.getItem('bearer-token')
+  if (!token) {
+    throw new Error('No bearer token found')
+  }
+
+  const response = await fetch('/api/children', {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch chats')
+  }
+  const data: Array<Chat> = await response.json()
+  return data
+}
+
+const chatsQueryOptions = queryOptions({
+  queryKey: ['chats'],
+  queryFn: async () => await fetchChats(),
+})
 
 export const Route = createFileRoute('/')({
   component: RouteComponent,
-  loader: () => {
+  loader: ({ context: { queryClient } }) => {
     return {
-      conversations: [
-        { id: 1, name: 'Alice', lastMessage: 'See you tomorrow!' },
-        { id: 2, name: 'Bob', lastMessage: 'Sounds good.' },
-        { id: 3, name: 'Charlie', lastMessage: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut ut gravida risus. Donec quam nibh, sagittis ultrices neque vel, fringilla vulputate dui. Nam imperdiet diam quis nisi varius suscipit. Maecenas nec vulputate turpis. Praesent pharetra, neque vel imperdiet finibus, odio sapien commodo ex, ac sodales ex magna eget elit.' },
-      ],
+      chats: queryClient.getQueryData(chatsQueryOptions.queryKey) || [],
     }
-  }
+  },
 })
 
 function RouteComponent() {
-  const { conversations } = Route.useLoaderData()
+  const postsQuery = useSuspenseQuery(chatsQueryOptions)
+  const chats = postsQuery.data
 
   return (
     <div className='fixed inset-0 overflow-hidden flex flex-col size-full'>
@@ -33,14 +64,14 @@ function RouteComponent() {
           <main className="flex-1 p-4 overflow-y-auto">
             <div className="max-w-2xl w-full mx-auto">
               <div className="space-y-4">
-                {conversations.map((convo) => (
-                  <Link to="/chat/$studentId"
-                    params={{ studentId: String(convo.id) }}
-                    key={convo.id}
+                {chats.map((chat) => (
+                  <Link to="/chat/$childId"
+                    params={{ childId: String(chat.id) }}
+                    key={chat.id}
                     className="block p-4 rounded bg-white shadow hover:bg-gray-50 transition-colors cursor-pointer"
                   >
-                    <div className="font-bold">{convo.name}</div>
-                    <p className="line-clamp-1 text-gray-500">{convo.lastMessage}</p>
+                    <div className="font-bold">{chat.first_name}</div>
+                    <p className="line-clamp-1 text-gray-500">{chat.last_name}</p>
                   </Link>
                 ))}
               </div>

@@ -1,21 +1,86 @@
+import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { Link, createFileRoute, notFound } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import React from 'react'
 
-export const Route = createFileRoute('/chat/$studentId')({
+type PostMessage = {
+  id: number
+}
+type GetMessage = {
+  id: number
+  message: string
+  from: "Student" | "Parent"
+  created: Date
+}
+
+const fetchMessages = async (childId: string) => {
+  const token = localStorage.getItem('bearer-token')
+  if (!token) {
+    throw new Error('No bearer token found')
+  }
+
+  const response = await fetch(`/api/messages/${childId}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  })
+  if (!response.ok) {
+    throw new Error('Failed to fetch messages')
+  }
+  const data: Array<GetMessage> = await response.json()
+  return data
+    .map((message) => {
+      // Convert UTC time to local time
+      const localTime = new Date(message.created + 'Z');
+      return ({
+        ...message,
+        created: localTime,
+      })
+    }).sort((a, b) => a.created.getTime() - b.created.getTime())
+}
+
+const postMessage = async (childId: string, message: string) => {
+  const token = localStorage.getItem('bearer-token')
+  if (!token) {
+    throw new Error('No bearer token found')
+  }
+
+  const response = await fetch(`/api/messages/${childId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Bearer ${token}`,
+    },
+    body: new URLSearchParams({
+      message
+    }),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to post message')
+  }
+
+  const data: PostMessage = await response.json()
+  return data
+}
+
+const messagesQueryOptions = (childId: string) => queryOptions({
+  queryKey: ['messages', childId],
+  queryFn: async () => await fetchMessages(childId),
+})
+
+export const Route = createFileRoute('/chat/$childId')({
   component: RouteComponent,
-  loader: ({ params }) => {
-    const { studentId } = params
-    if (!studentId) {
-      throw notFound()
+  loader: ({ params, context: { queryClient } }) => {
+    const { childId } = params
+    if (!childId) {
+      return notFound()
     }
 
+    const queryKey = messagesQueryOptions(childId).queryKey
+
     return {
-      messages: [
-        { id: 1, text: 'Hello!', sender: 'student', createdAt: "2023-03-01T12:00:00Z" },
-        { id: 2, text: 'Hi there!', sender: 'me', createdAt: "2023-03-01T12:01:00Z" },
-        { id: 3, text: 'How are you?', sender: 'student', createdAt: "2023-03-01T12:02:00Z" },
-      ],
+      messages: queryClient.getQueryData(queryKey) || [],
     }
   }
 })
@@ -26,9 +91,34 @@ function RouteComponent() {
   const chatContainerRef = React.useRef<HTMLDivElement>(null)
   const [currentMessage, setCurrentMessage] = React.useState<string>('')
 
-  const { messages: loadedMessages } = Route.useLoaderData()
+  const { childId } = Route.useParams()
 
-  const [messages, setMessages] = React.useState(loadedMessages)
+  const messagesQuery = useSuspenseQuery(messagesQueryOptions(childId))
+  const messages = messagesQuery.data
+  const queryClient = useQueryClient()
+
+  // add use mutation to post message and optmistic update the messages array
+  const postMessageMutation = useMutation({
+    mutationFn: ({ message }: { message: string }) => postMessage(childId, message),
+    onMutate: async ({ message }) => {
+      await queryClient.cancelQueries({ queryKey: messagesQueryOptions(childId).queryKey })
+
+      const previousMessages = queryClient.getQueryData(messagesQueryOptions(childId).queryKey) as Array<GetMessage>
+
+      queryClient.setQueryData(messagesQueryOptions(childId).queryKey, [
+        ...previousMessages,
+        { id: Date.now(), message, from: "Parent", created: new Date() },
+      ])
+
+      return { previousMessages }
+    },
+    onError: (error, { message }, context) => {
+      queryClient.setQueryData(messagesQueryOptions(childId).queryKey, context?.previousMessages)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: messagesQueryOptions(childId).queryKey })
+    },
+  })
 
   return (
     <div className='fixed inset-0 overflow-hidden flex flex-col size-full'>
@@ -62,27 +152,27 @@ function RouteComponent() {
               {messages.map((message, idx) => (
                 <div
                   key={message.id}
-                  className={`flex ${message.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
+                  className={`flex ${message.from === "Parent" ? 'justify-end' : 'justify-start'}`}>
                   {(() => {
                     const nextMsg = messages[idx + 1];
                     const showTime =
                       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
                       !nextMsg ||
-                      nextMsg.sender !== message.sender ||
-                      dayjs(nextMsg.createdAt).diff(message.createdAt, 'minute') > 1;
+                      nextMsg.from !== message.from ||
+                      dayjs(nextMsg.created).diff(message.created, 'minute') > 1;
 
                     return (
-                      <div className={`stack space-y-1 ${showTime ? 'pb-4' : 'pb-1'} `}>
+                      <div className={`flex flex-col gap-1 items-end ${showTime ? 'pb-4' : 'pb-1'} `}>
                         <div
-                          className={`p-2 rounded-lg max-w-xs text-white ${message.sender === 'me'
+                          className={`p-2 rounded-lg max-w-xs text-white ${message.from === "Parent"
                             ? 'bg-teal-500 text-white'
                             : 'bg-orange-400'
                             }`}
                         >
-                          {message.text}
+                          {message.message}
                         </div>
-                        {showTime ? <div className={`text-xs text-gray-500 ${message.sender === 'me' ? 'text-right' : ''}`}>
-                          {dayjs(message.createdAt).format('h:mm A')}
+                        {showTime ? <div className={`text-xs text-gray-500 ${message.from === 'Parent' ? 'text-right' : ''}`}>
+                          {dayjs(message.created).format('h:mm A')}
                         </div> : null}
                       </div>
                     );
@@ -99,10 +189,11 @@ function RouteComponent() {
                 const message = formData.get('message') as string
                 if (!message.trim()) return
 
-                setMessages((prev) => [
-                  ...prev,
-                  { id: Date.now(), text: message, sender: 'me', createdAt: new Date().toISOString() },
-                ])
+                postMessageMutation.mutate({ message })
+                const queryKey = messagesQueryOptions(childId).queryKey
+                queryClient.invalidateQueries({ queryKey })
+
+
                 if (textareaRef.current) {
                   textareaRef.current.value = ''
                   setCurrentMessage('')
