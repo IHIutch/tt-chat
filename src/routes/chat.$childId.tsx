@@ -12,6 +12,9 @@ import type { GetMessage } from '../utils/fetch/fetch-messages';
 const messagesQueryOptions = (childId: string) => queryOptions({
   queryKey: ['messages', childId],
   queryFn: async () => await fetchMessages(childId),
+  refetchInterval: 5000,             // 🔁 Refetch every 5 seconds
+  refetchIntervalInBackground: false, // Dont keep polling even if tab is not focused
+  refetchOnWindowFocus: true, // Refetch when the window is focused
 })
 
 const chatsQueryOptions = queryOptions({
