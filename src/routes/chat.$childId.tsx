@@ -2,71 +2,21 @@ import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from '@ta
 import { Link, createFileRoute, notFound } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import React from 'react'
-
-type PostMessage = {
-  id: number
-}
-type GetMessage = {
-  id: number
-  message: string
-  from: "Student" | "Parent"
-  created: Date
-}
-
-const fetchMessages = async (childId: string) => {
-  const token = localStorage.getItem('bearer-token')
-  if (!token) {
-    throw new Error('No bearer token found')
-  }
-
-  const response = await fetch(`/api/messages/${childId}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-  })
-  if (!response.ok) {
-    throw new Error('Failed to fetch messages')
-  }
-  const data: Array<GetMessage> = await response.json()
-  return data
-    .map((message) => {
-      // Convert UTC time to local time
-      const localTime = new Date(message.created + 'Z');
-      return ({
-        ...message,
-        created: localTime,
-      })
-    }).sort((a, b) => a.created.getTime() - b.created.getTime())
-}
-
-const postMessage = async (childId: string, message: string) => {
-  const token = localStorage.getItem('bearer-token')
-  if (!token) {
-    throw new Error('No bearer token found')
-  }
-
-  const response = await fetch(`/api/messages/${childId}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Bearer ${token}`,
-    },
-    body: new URLSearchParams({
-      message
-    }),
-  })
-  if (!response.ok) {
-    throw new Error('Failed to post message')
-  }
-
-  const data: PostMessage = await response.json()
-  return data
-}
+import clsx from 'clsx'
+import { useForm } from '@tanstack/react-form'
+import { fetchMessages } from '../utils/fetch/fetch-messages'
+import { postMessage } from '../utils/fetch/post-message'
+import { fetchChats } from '../utils/fetch/fetch-chats'
+import type { GetMessage } from '../utils/fetch/fetch-messages';
 
 const messagesQueryOptions = (childId: string) => queryOptions({
   queryKey: ['messages', childId],
   queryFn: async () => await fetchMessages(childId),
+})
+
+const chatsQueryOptions = queryOptions({
+  queryKey: ['chats'],
+  queryFn: async () => await fetchChats(),
 })
 
 export const Route = createFileRoute('/chat/$childId')({
@@ -77,33 +27,39 @@ export const Route = createFileRoute('/chat/$childId')({
       return notFound()
     }
 
-    const queryKey = messagesQueryOptions(childId).queryKey
+    const messagesQueryKey = messagesQueryOptions(childId).queryKey
+    const chatsQueryKey = chatsQueryOptions.queryKey
 
     return {
-      messages: queryClient.getQueryData(queryKey) || [],
+      chats: queryClient.getQueryData(chatsQueryKey) || [],
+      messages: queryClient.getQueryData(messagesQueryKey) || [],
     }
   }
 })
 
 function RouteComponent() {
-  const buttonRef = React.useRef<HTMLButtonElement>(null)
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null)
-  const chatContainerRef = React.useRef<HTMLDivElement>(null)
-  const [currentMessage, setCurrentMessage] = React.useState<string>('')
-
+  const queryClient = useQueryClient()
   const { childId } = Route.useParams()
 
-  const messagesQuery = useSuspenseQuery(messagesQueryOptions(childId))
-  const messages = messagesQuery.data
-  const queryClient = useQueryClient()
+  const buttonRef = React.useRef<HTMLButtonElement>(null)
+  const chatContainerRef = React.useRef<HTMLDivElement>(null)
+  const [pageDidLoad, setPageDidLoad] = React.useState(false)
 
-  // add use mutation to post message and optmistic update the messages array
+  const {
+    data: messages,
+    isSuccess: messagesLoaded,
+  } = useSuspenseQuery(messagesQueryOptions(childId))
+  const { data: currentChat } = useSuspenseQuery({
+    ...chatsQueryOptions,
+    select: (data) => data.find(chat => String(chat.id) === childId)
+  })
+
   const postMessageMutation = useMutation({
     mutationFn: ({ message }: { message: string }) => postMessage(childId, message),
     onMutate: async ({ message }) => {
       await queryClient.cancelQueries({ queryKey: messagesQueryOptions(childId).queryKey })
 
-      const previousMessages = queryClient.getQueryData(messagesQueryOptions(childId).queryKey) as Array<GetMessage>
+      const previousMessages: Array<GetMessage> = queryClient.getQueryData(messagesQueryOptions(childId).queryKey) || []
 
       queryClient.setQueryData(messagesQueryOptions(childId).queryKey, [
         ...previousMessages,
@@ -112,12 +68,51 @@ function RouteComponent() {
 
       return { previousMessages }
     },
-    onError: (error, { message }, context) => {
+    onError: (_error, _ctx, context) => {
       queryClient.setQueryData(messagesQueryOptions(childId).queryKey, context?.previousMessages)
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: messagesQueryOptions(childId).queryKey })
     },
+  })
+
+  const form = useForm({
+    defaultValues: {
+      message: '',
+    },
+    onSubmit: ({ value, formApi }) => {
+      postMessageMutation.mutate({
+        message: value.message.trim(),
+      })
+      queryClient.invalidateQueries({ queryKey: messagesQueryOptions(childId).queryKey })
+      formApi.reset()
+      // Scroll to the bottom of the chat
+      setTimeout(() => {
+        if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
+        }
+      }, 0)
+    },
+  })
+
+  React.useEffect(() => {
+    if (chatContainerRef.current && messagesLoaded && !pageDidLoad) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
+      setPageDidLoad(true)
+    }
+  }, [messagesLoaded, pageDidLoad])
+
+  const computedMessages = messages.map((message, idx) => {
+    const nextMsg = messages[idx + 1] as GetMessage | undefined;
+    const showTime =
+      !nextMsg ||
+      nextMsg.from !== message.from ||
+      dayjs(nextMsg.created).diff(message.created, 'minute') > 1;
+
+    return {
+      ...message,
+      showTime
+    }
   })
 
   return (
@@ -134,10 +129,16 @@ function RouteComponent() {
           </div>
           <div className='max-w-2xl mx-auto w-full'>
             <div className="flex items-center">
-              <div className='flex items-center gap-1'>
-                <div className='font-bold rounded-full size-8 bg-orange-400 text-white flex items-center justify-center'>J</div>
-                Jason
-              </div>
+              {currentChat ? (
+                <div className='flex items-center gap-2'>
+                  <div className='font-bold rounded-full size-8 bg-orange-400 text-white flex items-center justify-center uppercase'>
+                    {currentChat.first_name[0]}
+                  </div>
+                  <div className='text-lg font-semibold'>
+                    {currentChat.first_name}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
           <div className='flex-1' />
@@ -149,87 +150,91 @@ function RouteComponent() {
         <div className="flex flex-col h-full">
           <main ref={chatContainerRef} className="flex-1 p-4 overflow-y-auto">
             <div className="max-w-2xl w-full mx-auto">
-              {messages.map((message, idx) => (
+              {computedMessages.map((message) => (
                 <div
                   key={message.id}
-                  className={`flex ${message.from === "Parent" ? 'justify-end' : 'justify-start'}`}>
-                  {(() => {
-                    const nextMsg = messages[idx + 1];
-                    const showTime =
-                      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-                      !nextMsg ||
-                      nextMsg.from !== message.from ||
-                      dayjs(nextMsg.created).diff(message.created, 'minute') > 1;
-
-                    return (
-                      <div className={`flex flex-col gap-1 items-end ${showTime ? 'pb-4' : 'pb-1'} `}>
-                        <div
-                          className={`p-2 rounded-lg max-w-xs text-white ${message.from === "Parent"
-                            ? 'bg-teal-500 text-white'
-                            : 'bg-orange-400'
-                            }`}
-                        >
-                          {message.message}
-                        </div>
-                        {showTime ? <div className={`text-xs text-gray-500 ${message.from === 'Parent' ? 'text-right' : ''}`}>
-                          {dayjs(message.created).format('h:mm A')}
-                        </div> : null}
-                      </div>
-                    );
-                  })()}
+                  className={clsx(
+                    'flex',
+                    message.from === "Parent" ? 'justify-end' : 'justify-start'
+                  )}>
+                  <div className={clsx(
+                    'flex flex-col gap-1 items-end',
+                    message.showTime ? 'pb-4' : 'pb-1'
+                  )}>
+                    <div
+                      className={clsx(
+                        'p-2 rounded-lg max-w-xs text-white',
+                        message.from === "Parent" ? 'bg-teal-500 text-white' : 'bg-orange-400'
+                      )}
+                    >
+                      {message.message}
+                    </div>
+                    {message.showTime ? <div className={clsx(
+                      'text-xs text-gray-500',
+                      message.from === 'Parent' ? 'text-right' : ''
+                    )}>
+                      {dayjs(message.created).format('h:mm A')}
+                    </div> : null}
+                  </div>
                 </div>
               ))}
             </div>
           </main>
           <div className="p-4 shadow-[0_-1px_3px_0] shadow-slate-200 bg-white h-auto shrink-0">
-            <div className="max-w-xl mx-auto">
-              <form onSubmit={(event) => {
-                event.preventDefault()
-                const formData = new FormData(event.currentTarget)
-                const message = formData.get('message') as string
-                if (!message.trim()) return
-
-                postMessageMutation.mutate({ message })
-                const queryKey = messagesQueryOptions(childId).queryKey
-                queryClient.invalidateQueries({ queryKey })
-
-
-                if (textareaRef.current) {
-                  textareaRef.current.value = ''
-                  setCurrentMessage('')
-                }
-                // Scroll to the bottom of the chat
-                setTimeout(() => {
-                  chatContainerRef.current!.scrollTop = chatContainerRef.current!.scrollHeight
-                }, 0)
-              }} className="flex space-x-2">
+            <div className="max-w-2xl mx-auto">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  form.handleSubmit()
+                }}
+                className="flex space-x-2">
                 <div className="relative w-full">
-                  <div className='invisible p-2 min-h-11 max-h-40.5 border'>
-                    {currentMessage}
-                  </div>
-                  <textarea
-                    required
-                    ref={textareaRef}
+                  <form.Subscribe
+                    selector={(state) => [state.values.message]}
+                    children={([messageVal]) => (
+                      <div className='invisible p-2 min-h-11 max-h-40.5 border'>
+                        {messageVal}
+                      </div>
+                    )}
+                  />
+                  <form.Field
                     name="message"
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault()
-                        buttonRef.current?.click()
-                      }
-                    }}
-                    onChange={(event) => {
-                      const el = event.currentTarget
-                      // el.style.height = el.scrollHeight + 'px'
-                      setCurrentMessage(el.value)
-                    }}
-                    placeholder="Type a message..."
-                    className="bg-slate-100 border-slate-300 border w-full rounded-lg p-2 resize-none absolute inset-0 size-full"
-                    rows={1}
+                    children={(field) => (
+                      <textarea
+                        required
+                        name={field.name}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            buttonRef.current?.click()
+                          }
+                        }}
+                        onChange={(event) => {
+                          field.handleChange(event.currentTarget.value)
+                        }}
+                        value={field.state.value}
+                        placeholder="Type a message..."
+                        className="bg-slate-100 border-slate-300 border w-full rounded-lg p-2 resize-none absolute inset-0 size-full placeholder:text-gray-800"
+                        rows={1}
+                      />
+                    )}
                   />
                 </div>
-                <button type="submit" ref={buttonRef} className="rounded-full font-semibold px-4 bg-orange-400 text-white hover:bg-orange-500 transition-colors">
-                  Send
-                </button>
+                <form.Subscribe
+                  selector={(state) => [state.isSubmitting]}
+                  children={([isSubmitting]) => (
+                    <button
+                      type="submit"
+                      ref={buttonRef}
+                      className="rounded-full font-semibold px-4 bg-orange-400 text-white hover:bg-orange-500 transition-colors"
+                      disabled={isSubmitting}
+                    // TODO: handle loading state
+                    >
+                      Send
+                    </button>
+                  )}
+                />
               </form>
             </div>
           </div>

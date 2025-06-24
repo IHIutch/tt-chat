@@ -1,86 +1,144 @@
+import { useForm } from '@tanstack/react-form'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import Button from '../components/button'
 
 export const Route = createFileRoute('/login')({
-    component: RouteComponent,
+  component: RouteComponent,
 })
 
 function RouteComponent() {
-    const navigate = useNavigate()
-    const [email, setEmail] = useState('jbhutch01+parent@gmail.com')
-    const [password, setPassword] = useState('testtest')
+  const navigate = useNavigate()
 
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault()
-        // Replace with your actual login API endpoint
+  const form = useForm({
+    defaultValues: {
+      email: '',
+      password: '',
+    },
+    validators: {
+      onSubmitAsync: async ({ value }) => {
         const response = await fetch('/api/authenticate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-                email,
-                password,
-                type: 'parent',
-            }),
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            email: value.email,
+            password: value.password,
+            type: 'parent',
+          }),
         })
 
         if (response.ok) {
-            const data = await response.json()
+          const data = await response.json()
+          if (data.error) {
+            return {
+              form: data.error,
+              fields: {}
+            }
+          } else {
             if (!data.token) {
-                throw new Error('Something went wrong, please try again.')
+              return {
+                form: "Something went wrong, please try again.",
+                fields: {}
+              }
             }
             localStorage.setItem('bearer-token', data.token)
             navigate({ to: '/' })
+          }
         } else {
-            // Handle login error
-            console.error('Login failed')
+          return {
+            form: "Network error, please try again.",
+            fields: {}
+          }
         }
+      }
     }
+  })
 
-    return (
-        <div className="p-2">
-            <form onSubmit={handleLogin} className="max-w-sm mx-auto">
-                <div className="mb-5">
-                    <label
-                        htmlFor="email"
-                        className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
-                    >
-                        Your email
-                    </label>
-                    <input
-                        type="email"
-                        id="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                        placeholder="name@flowbite.com"
-                        required
-                    />
-                </div>
-                <div className="mb-5">
-                    <label
-                        htmlFor="password"
-                        className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
-                    >
-                        Your password
-                    </label>
-                    <input
-                        type="password"
-                        id="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                        required
-                    />
-                </div>
-                <button
-                    type="submit"
-                    className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm w-full sm:w-auto px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
-                >
-                    Login
-                </button>
-            </form>
+  return (
+    <div className="p-2 bg-slate-100 size-full fixed inset-0">
+      <div className='max-w-sm w-full bg-white rounded shadow-sm mx-auto mt-32 overflow-hidden'>
+        <div className='bg-teal-500 p-6'>
+          <p className='text-white text-2xl font-bold text-center'>ThinkTech</p>
         </div>
-    )
+        <div className='p-6'>
+          <h1 className='text-2xl font-bold mb-4'>
+            Parent Login
+          </h1>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              form.handleSubmit()
+            }}
+            className="flex flex-col gap-6">
+            <form.Field
+              name="email"
+              children={(field) => (
+                <div>
+                  <label
+                    htmlFor={field.name}
+                    className="block mb-2 text-sm font-medium text-slate-800 dark:text-white"
+                  >
+                    Your email
+                  </label>
+                  <input
+                    type="email"
+                    id={field.name}
+                    defaultValue={field.state.value}
+                    onChange={(e) => field.handleChange(e.currentTarget.value)}
+                    className="bg-slate-50 border border-slate-300 rounded-full h-10 w-full px-4"
+                    required
+                  />
+                </div>
+              )}
+            />
+            <form.Field
+              name="password"
+              children={(field) => (
+                <div>
+                  <label
+                    htmlFor={field.name}
+                    className="block mb-2 text-sm font-medium text-slate-800 dark:text-white"
+                  >
+                    Your password
+                  </label>
+                  <input
+                    type="password"
+                    id={field.name}
+                    defaultValue={field.state.value}
+                    onChange={(e) => field.handleChange(e.currentTarget.value)}
+                    className="bg-slate-50 border border-slate-300 rounded-full h-10 w-full px-4"
+                    required
+                  />
+                </div>
+              )}
+            />
+            <form.Subscribe
+              selector={s => [s.errorMap.onSubmit]}
+              children={([formError]) => formError ? (
+                <div className='bg-red-100 rounded p-2'>
+                  <div className="text-red-800 text-sm font-medium">{formError}</div>
+                </div>
+              ) : null}
+            />
+            <form.Subscribe
+              selector={(state) => [state.isSubmitting]}
+              children={([isSubmitting]) => (
+                <Button
+                  type="submit"
+                  className="rounded-full font-semibold px-4 bg-orange-400 text-white hover:bg-orange-500 transition-colors h-10 mx-auto min-w-24"
+                  aria-disabled={isSubmitting}
+                  isLoading={isSubmitting}
+                  loadingText="Logging in..."
+                >
+                  Log In
+                </Button>
+              )}
+            />
+          </form>
+        </div>
+      </div>
+    </div>
+  )
 }

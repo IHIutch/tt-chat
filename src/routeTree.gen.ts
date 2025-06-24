@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatChildIdRouteImport } from './routes/chat.$childId'
@@ -17,6 +18,11 @@ import { Route as ChatChildIdRouteImport } from './routes/chat.$childId'
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogoutRoute = LogoutRouteImport.update({
+  id: '/logout',
+  path: '/logout',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -38,12 +44,14 @@ const ChatChildIdRoute = ChatChildIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/register': typeof RegisterRoute
   '/chat/$childId': typeof ChatChildIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/register': typeof RegisterRoute
   '/chat/$childId': typeof ChatChildIdRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/register': typeof RegisterRoute
   '/chat/$childId': typeof ChatChildIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/register' | '/chat/$childId'
+  fullPaths: '/' | '/login' | '/logout' | '/register' | '/chat/$childId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/register' | '/chat/$childId'
-  id: '__root__' | '/' | '/login' | '/register' | '/chat/$childId'
+  to: '/' | '/login' | '/logout' | '/register' | '/chat/$childId'
+  id: '__root__' | '/' | '/login' | '/logout' | '/register' | '/chat/$childId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
+  LogoutRoute: typeof LogoutRoute
   RegisterRoute: typeof RegisterRoute
   ChatChildIdRoute: typeof ChatChildIdRoute
 }
@@ -76,6 +86,13 @@ declare module '@tanstack/react-router' {
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logout': {
+      id: '/logout'
+      path: '/logout'
+      fullPath: '/logout'
+      preLoaderRoute: typeof LogoutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
+  LogoutRoute: LogoutRoute,
   RegisterRoute: RegisterRoute,
   ChatChildIdRoute: ChatChildIdRoute,
 }

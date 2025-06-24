@@ -1,33 +1,6 @@
 import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
-
-// [{ "id": "848", "first_name": "Chris", "last_name": "Moyer" }] %
-type Chat = {
-  id: string
-  first_name: string
-  last_name: string
-}
-
-const fetchChats = async () => {
-  const token = localStorage.getItem('bearer-token')
-  if (!token) {
-    throw new Error('No bearer token found')
-  }
-
-  const response = await fetch('/api/children', {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch chats')
-  }
-  const data: Array<Chat> = await response.json()
-  return data
-}
+import { fetchChats } from '../utils/fetch/fetch-chats'
 
 const chatsQueryOptions = queryOptions({
   queryKey: ['chats'],
@@ -44,8 +17,7 @@ export const Route = createFileRoute('/')({
 })
 
 function RouteComponent() {
-  const postsQuery = useSuspenseQuery(chatsQueryOptions)
-  const chats = postsQuery.data
+  const { data: chats } = useSuspenseQuery(chatsQueryOptions)
 
   return (
     <div className='fixed inset-0 overflow-hidden flex flex-col size-full'>
